@@ -25,4 +25,4 @@ for ii in range(5):
     time.sleep(1)
 ```
 
-If the watch-dog timer is used, a WDT object can be passed to the SEN66 initializing function and every second orso the watchdog is fed with an update.
+If the watch-dog timer is used, a WDT object can be passed to the SEN6x initializing function and every second orso the watchdog is fed with an update.
