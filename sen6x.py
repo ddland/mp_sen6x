@@ -14,7 +14,7 @@ Code is not yet compleet. Working with default settings and able to read out
 measurement values
 """
 
-class SEN66:
+class SEN6X:
     address = 0x6b #107
     clean_interval_bounds= (86400,2*86400) # clean every other day the fan
     mode = 'idle'
@@ -33,8 +33,10 @@ class SEN66:
                 'stop_measurement':    {'code': [0x01, 0x04], 'delay':1000, 'length':0, 'mode': 'measurement'},
                 'read_and_clear_device_status': {'code': [0xd2, 0x10], 'delay':20, 'length':6, 'mode':'both'},
                 'read_device_status':  {'code': [0xd2, 0x06], 'delay':20, 'length':6, 'mode':'both'},
-                'read_measured_raw' :  {'code': [0x04, 0x05], 'delay':20, 'length':15, 'mode': 'measurement'},
-                'read_measured_values':{'code': [0x03, 0x00], 'delay':20, 'length':27, 'mode':'measurement'},
+                'read_measured_raw' :  {'SEN63C': {'code': [0x04, 0x92], 'delay':20, 'length':6, 'mode': 'measurement'},
+                                        'SEN66': { 'code': [0x04, 0x05], 'delay':20, 'length':15,'mode': 'measurement'}},
+                'read_measured_values':{'SEN63C': {'code': [0x04, 0x71], 'delay':20, 'length':21, 'mode':'measurement'},
+                                        'SEN66': { 'code': [0x30, 0x00], 'delay':20, 'length':27, 'mode':'measurement'}},
                 'read_number_concentration': {'code': [0x03, 0x16], 'delay':20, 'length':15, 'mode':'measurement'},
                 }
     
@@ -109,9 +111,9 @@ class SEN66:
         self.name = self.crc_all(self.__I2C_write('get_product_name'))
         if self.name:
             self.name = self.print_string(self.name)
-        if self.name != 'SEN66':
+        if self.name not in ['SEN63C', 'SEN66']:
             print(self.name)
-            raise Error('Something wrong with the sensorstring! Did you get an SEN66?')            
+            raise Exception('Something wrong with the sensorstring! Did you get an SEN66 or SEN63C?')            
         firmware = self.crc_all(self.__I2C_write('get_version'))
         self.firmware = float("%d.%d" %(firmware[0], firmware[1]))
         self.serial = self.print_string(self.crc_all(self.__I2C_write('get_serial_number')))
@@ -138,23 +140,89 @@ class SEN66:
         self.__I2C_write('stop_measurement')
         self.mode = 'idle'
         
+    def get_all(self):
+        self.wdt_feed()
+        number = self.get_number_count()
+        time.sleep(1)
+        self.wdt_feed()
+        data = self.get_data()
+        return number + data
+        
+    def number_count_header(self):
+        return "pm0.5 [n/cm^3], pm1.0 [n/cm^3], pm2.5 [n/cm^3], pm4.0 [n/cm^3], pm10 [n/cm^3]"
+        
+    def get_number_count(self):
+        if self.mode != 'measurement':
+            raise Exception('device not in measurement mode!')
+        ready = self.__I2C_write('get_data_ready')
+        data = ()
+        if ready[1] == 1:
+            data = self.__I2C_write('read_number_concentration')
+            pm0p5 = self.parse_crc(data[0], data[1], data[2])/10
+            pm1p0 = self.parse_crc(data[3], data[4], data[5])/10
+            pm2p5 = self.parse_crc(data[6], data[7], data[8])/10
+            pm4p0 = self.parse_crc(data[9], data[10], data[11])/10
+            pm10p0 = self.parse_crc(data[12], data[13], data[14])/10
+            data = (pm0p5, pm1p0, pm2p5, pm4p0, pm10p0)
+        self.clean()
+        return data
+    
+    def data_raw_header(self):
+        if self.name == "SEN66":
+            return "Rel. Humidity [%], Temperature [degC], VOC [-], NOx [-], CO2 [ppm]"
+        elif self.name == "SEN63C":
+            return "Rel Humidity [%], Temperature [degC]"
+    
+    def get_data_raw(self):
+        if self.mode != 'measurement':
+            raise Exception('device not in measurement mode!')
+        ready = self.__I2C_write('get_data_ready')
+        data = ()
+        if ready[1] == 1:
+            data = self.__I2C_write('read_measured_raw', self.name)
+            amb_hum = self.parse_crc(data[0], data[1], data[2])/100
+            amb_temp = self.parse_crc(data[3], data[4], data[5])/200
+            nox = -1
+            co2 = -1
+            voc = -1
+            if self.name == 'SEN66':
+                voc = self.parse_crc(data[6], data[7], data[8])
+                nox = self.parse_crc(data[9], data[10],data[11])
+                co2 = self.parse_crc(data[12],data[13],data[14])
+            data = (amb_hum, amb_temp, voc, nox, co2)
+        self.clean()
+        return data
+    
+    def data_header(self):
+        base = "pm1.0 [ug/m^3], pm2.5 [ug/m^3], pm4.0 [ug/m^3], pm10.0 [ug/m^3],"
+        if self.name == 'SEN63C':
+            return base + "Rel. Humidity [%], Temperature [degC], CO2 [ppm]"
+        elif self.name == 'SEN66':
+            return base + "Rel. Humidity [%], Temperature [degC], VOC [-], NOx [-], CO2 [ppm]"
+        
+            
+    
+            
     def get_data(self):
         if self.mode != 'measurement':
             raise Exception('device not in measurement mode!')
         ready = self.__I2C_write('get_data_ready')
-        data = None
+        data = ()
         if ready[1] == 1:
-            data = self.__I2C_write('read_measured_values')
+            data = self.__I2C_write('read_measured_values', self.name)
             pm1p0 = self.parse_crc(data[0], data[1], data[2])/10
             pm2p5 = self.parse_crc(data[3], data[4], data[5])/10
             pm4p0 = self.parse_crc(data[6], data[7], data[8])/10
             pm10p0 = self.parse_crc(data[9], data[10], data[11])/10
             amb_hum = self.parse_crc(data[12], data[13], data[14])/100
             amb_temp = self.parse_crc(data[15], data[16], data[17])/200
-            voc = self.parse_crc(data[18], data[19], data[20])/10
-            nox = self.parse_crc(data[21], data[22], data[23])/10
-            co2 = self.parse_crc(data[24], data[25], data[26])
-            data = (pm1p0, pm2p5, pm4p0, pm10p0, amb_hum, amb_temp, voc, nox, co2) 
+            if self.name == 'SEN66':
+                nox = self.parse_crc(data[21], data[22], data[23])/10
+                co2 = self.parse_crc(data[24], data[25], data[26])
+            elif self.name == 'SEN63C':
+                co2 = self.parse_crc(data[18], data[19], data[20])/10
+                nox = -1
+            data = (pm1p0, pm2p5, pm4p0, pm10p0, amb_hum, amb_temp, co2, nox)
         self.clean()
         return data
             
@@ -189,18 +257,30 @@ class SEN66:
             print(bus, self.address)
             raise OSError("device not found! Are the cables connected?")
 
-    def __I2C_write(self, command):
+    def __I2C_write(self, command, sensor=None):
         self.wdt_feed()
-        self.i2c.writeto(self.address, bytearray(self.commands[command]['code']))
-        time.sleep(self.commands[command]['delay']/1000)
+        if isinstance(sensor, str):
+            cmd = self.commands[command][sensor]['code']
+            cmd_length = self.commands[command][sensor]['length']
+            cmd_delay = self.commands[command][sensor]['delay']/1000
+        else:
+            cmd = self.commands[command]['code']
+            cmd_length = self.commands[command]['length']
+            cmd_delay = self.commands[command]['delay']/1000
+        self.i2c.writeto(self.address, bytearray(cmd))
+        time.sleep(cmd_delay)
         self.wdt_feed()
         data = None
-        if self.commands[command]['length'] > 0:
-            data = self.__I2C_read(command)
+        if cmd_length > 0:
+            data = self.__I2C_read(command, sensor)
         return data
     
-    def __I2C_read(self, command):
-        return self.i2c.readfrom(self.address, self.commands[command]['length'])
+    def __I2C_read(self, command, sensor):
+        if isinstance(sensor, str):
+            addr = self.commands[command][sensor]['length']
+        else:
+            addr = self.commands[command]['length']
+        return self.i2c.readfrom(self.address, addr)
         
         
     def __CRC(self, data):
@@ -219,12 +299,13 @@ class SEN66:
         return crc
     
 if __name__ == "__main__":
-    i2c0 = machine.I2C(1, sda=machine.Pin(18), scl=machine.Pin(19), freq=100000)
-    sen = SEN66(i2c0)
+    i2c0 = machine.I2C(0, sda=machine.Pin(0), scl=machine.Pin(1), freq=100000)
+    sen = SEN6X(i2c0)
     sen.start()
     sen.clean(force=True) # force a cleanup of the sensor
     #for ii in range(5):
     running = True
+    print(sen.data_header())
     while running:
         try:
             print(sen.get_data())
