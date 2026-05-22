@@ -3,12 +3,14 @@ from micropython import const
 import time
 import random
 """
-Library for the Sensirion SEN66 multi-sensor module.
+Library for the Sensirion SEN6x multi-sensor module.
 
 Hardware Connections:
  - VCC: 3.3 V (only 1 wire has to be connected)
  - Ground (only 1 wire has to be connected)
  - I2C: @100 kHz
+ 
+Tested with SEN66 and SEN63C
 
 Code is not yet compleet. Working with default settings and able to read out
 measurement values
@@ -168,10 +170,7 @@ class SEN6X:
         return data
     
     def data_raw_header(self):
-        if self.name == "SEN66":
-            return "Rel. Humidity [%], Temperature [degC], VOC [-], NOx [-], CO2 [ppm]"
-        elif self.name == "SEN63C":
-            return "Rel Humidity [%], Temperature [degC]"
+        return "Rel. Humidity [%], Temperature [degC], VOC [-], NOx [-], CO2 [ppm]"
     
     def get_data_raw(self):
         if self.mode != 'measurement':
@@ -194,14 +193,8 @@ class SEN6X:
         return data
     
     def data_header(self):
-        base = "pm1.0 [ug/m^3], pm2.5 [ug/m^3], pm4.0 [ug/m^3], pm10.0 [ug/m^3],"
-        if self.name == 'SEN63C':
-            return base + "Rel. Humidity [%], Temperature [degC], CO2 [ppm]"
-        elif self.name == 'SEN66':
-            return base + "Rel. Humidity [%], Temperature [degC], VOC [-], NOx [-], CO2 [ppm]"
-        
-            
-    
+        pm = "pm1.0 [ug/m^3], pm2.5 [ug/m^3], pm4.0 [ug/m^3], pm10.0 [ug/m^3],"
+        return pm + "Rel. Humidity [%], Temperature [degC], VOC [-], NOx [-], CO2 [ppm]"
             
     def get_data(self):
         if self.mode != 'measurement':
